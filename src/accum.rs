@@ -19,14 +19,21 @@ pub struct Accumulator {
 
 impl Accumulator {
 
+    /// Create a new Accumulator struct
     pub fn new() -> Self {
         Self {data: Vec::new()}
     }
 
+    /// Get the length of the internal u32 array used to store the accumulated
+    /// data
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    /// Add a value with a certain digit offset in the accumulator.
+    /// 
+    /// Example using the base 10 equivalent:
+    /// +200 (add 2 to third digit) vs. +2 (add 2 to first digit) 
     fn add_at_place(&mut self, value: u32, place: usize) {
         let mut carry: u64 = value as u64;
         let mut vec_index: usize = place;
@@ -53,10 +60,12 @@ impl Accumulator {
         }
     }
 
+    /// Add a value to the accumulator
     pub fn add(&mut self, value: u32) {
         self.add_at_place(value, 0);
     }
 
+    /// Multiply the accumulator by a value
     pub fn mul(&mut self, value: u32) {
         // Multiply digit by digit starting with the most significant
         for ii in (0..self.len()).rev() {
@@ -67,6 +76,7 @@ impl Accumulator {
         }
     }
 
+    /// Divide the accumulator by a value and return the remainder
     pub fn div(&mut self, value: u32) -> u32 {
         // Check for divide by zero and panic
         if value == 0 {
@@ -92,6 +102,7 @@ impl Accumulator {
         rem[0]
     }
 
+    /// Retrieve the contents of the accumulator as a hex string
     pub fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
