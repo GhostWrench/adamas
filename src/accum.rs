@@ -1,5 +1,12 @@
-//! Accumulator representing a very large unsigned number. Starts at zero and 
-//! can be updated by adding, multiplying and dividing by unsigned values
+//! accum: Simple accumulator
+//! 
+//! This module provides a very simple "infinite" precision accumulator struct 
+//! (Accumulator) that supports three operations: add multiply and divide. Any 
+//! number of operations can be applied to the Accumulator without having to 
+//! worry about an overflow, it will keep expanding. This is useful for encoding
+//! compressed data
+//! 
+//! # Examples
 
 use std::vec::Vec;
 use std::string::String;
@@ -85,12 +92,10 @@ impl Accumulator {
         rem[0]
     }
 
-    fn to_hex_str(&self) -> String {
+    pub fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
             s.push_str(format!("{:08x} ", digit).as_str());
-            //let digit_str: String = format!("{:08x} ", digit);
-            //s.push_str(&digit_str);
         }
         s.pop();
         s
@@ -174,5 +179,14 @@ mod tests {
             decode[ii] = a.div(encode[ii]+1);
         }
         assert_eq!(encode, decode);
+    }
+
+    #[test]
+    fn all_three() {
+        let mut a = Accumulator::new();
+        a.add(u32::MAX);
+        a.mul(u32::MAX);
+        a.div(u32::MAX);
+        assert_eq!(a.to_hex_str(), "ffffffff");
     }
 }
