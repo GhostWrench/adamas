@@ -19,6 +19,10 @@ impl Accum {
     fn add_at_place(&mut self, value: u32, place: usize) {
         let mut carry: u64 = value as u64;
         let mut vec_index: usize = place;
+        // do nothing if the value is 0
+        if value == 0 {
+            return;
+        }
         // add digits until the accumulator is big enough 
         while vec_index > self.data.len() {
             self.data.push(0);
@@ -42,7 +46,18 @@ impl Accum {
         self.add_at_place(value, 0);
     }
 
-    pub fn mult(&mut self, value: u32) {
+    pub fn mul(&mut self, value: u32) {
+        // Multiply digit by digit starting with the most significant
+        for ii in (0..self.data.len()).rev() {
+            let result: u64 = (self.data[ii] as u64) * (value as u64);
+            let [lsb, msb]: [u32; 2] = unsafe { transmute(result) };
+            self.add_at_place(msb, ii+1);
+            self.data[ii] = lsb;
+        }
+    }
+
+    pub fn div(&mut self, value: u32) -> u32 {
+        1
     }
 
     pub fn to_hex_str(&self) -> String {
@@ -63,6 +78,7 @@ mod tests {
 
     #[test]
     fn test_accum_add_at_place() {
+        // test some basic addition
         let mut a = Accum::new();
         a.add_at_place(3, 2);
         assert_eq!(a.to_hex_str(), "00000003 00000000 00000000");
@@ -72,7 +88,7 @@ mod tests {
         assert_eq!(a.to_hex_str(), "00000003 00000002 00000001");
         a.add_at_place(u32::MAX, 1);
         assert_eq!(a.to_hex_str(), "00000004 00000001 00000001");
-
+        // test that carry propigates
         let mut a2 = Accum::new();
         a2.add_at_place(u32::MAX, 0);
         a2.add_at_place(u32::MAX, 1);
@@ -86,6 +102,7 @@ mod tests {
 
     #[test]
     fn test_accum_add() {
+        // test very basic addition and vector grows
         let mut a = Accum::new();
         a.add(2);
         a.add(4);
@@ -94,5 +111,21 @@ mod tests {
         assert_eq!(a.to_hex_str(), "00000001 00000005");
         a.add(0xf0);
         assert_eq!(a.to_hex_str(), "00000001 000000f5");
+    }
+
+    #[test]
+    fn test_accum_mul() {
+        let mut a = Accum::new();
+        a.add_at_place(0xF0000000, 0);
+        a.add_at_place(0xF0000000, 1);
+        a.mul(2);
+        assert_eq!(a.to_hex_str(), "00000001 e0000001 e0000000");
+
+        let mut a2 = Accum::new();
+        a2.add_at_place(u32::MAX, 2);
+        a2.add_at_place(u32::MAX, 1);
+        a2.add_at_place(u32::MAX, 0);
+        a2.mul(u32::MAX);
+        assert_eq!(a2.to_hex_str(), "fffffffe ffffffff ffffffff 00000001");
     }
 }
