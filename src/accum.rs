@@ -6,17 +6,17 @@ use std::string::String;
 use std::mem::transmute;
 
 #[derive(Debug)]
-pub struct Accum {
+pub struct Accumulator {
     data: Vec<u32>,
 }
 
-impl Accum {
+impl Accumulator {
 
     pub fn new() -> Self {
         Self {data: Vec::new()}
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.data.len()
     }
 
@@ -50,20 +50,6 @@ impl Accum {
         self.add_at_place(value, 0);
     }
 
-    /// Sum another different accumulator into this accumulator
-    pub fn sum(&mut self, a: &Accum) {
-        for ii in 0..a.len() {
-            if ii >= self.len() {
-                self.add_at_place(a.data[ii], ii);
-            } else {
-                let sum: u64 = (self.data[ii] as u64) + (a.data[ii] as u64);
-                let [lsb, msb]: [u32; 2] = unsafe { transmute(sum) };
-                self.data[ii] = lsb;
-                self.add_at_place(msb, ii+1);
-            }
-        }
-    }
-
     pub fn mul(&mut self, value: u32) {
         // Multiply digit by digit starting with the most significant
         for ii in (0..self.len()).rev() {
@@ -74,13 +60,32 @@ impl Accum {
         }
     }
 
-    /*
     pub fn div(&mut self, value: u32) -> u32 {
-        1
+        // Check for divide by zero and panic
+        if value == 0 {
+            panic!("Cannot divide by zero!");
+        }
+        let den: u64 = value as u64;
+        let mut rem: [u32; 2] = [0; 2];
+        for ii in (0..self.len()).rev() {
+            let num: [u32; 2] = [self.data[ii], rem[0]];
+            let result: [u32; 2];
+            unsafe {
+                let num: u64 = transmute(num);
+                result = transmute(num / den);
+                rem = transmute(num % den);
+            }
+            if result[0] == 0 {
+                self.data.pop();
+            }
+            else {
+                self.data[ii] = result[0];
+            }
+        }
+        rem[0]
     }
-    */
 
-    pub fn to_hex_str(&self) -> String {
+    fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
             s.push_str(format!("{:08x} ", digit).as_str());
@@ -95,12 +100,12 @@ impl Accum {
 #[cfg(test)]
 mod tests {
 
-    use crate::accum::Accum;
+    use crate::accum::Accumulator;
 
     #[test]
-    fn test_accum_add_at_place() {
+    fn add_at_place() {
         // test some basic addition
-        let mut a = Accum::new();
+        let mut a = Accumulator::new();
         a.add_at_place(3, 2);
         assert_eq!(a.to_hex_str(), "00000003 00000000 00000000");
         a.add_at_place(2, 1);
@@ -110,21 +115,21 @@ mod tests {
         a.add_at_place(u32::MAX, 1);
         assert_eq!(a.to_hex_str(), "00000004 00000001 00000001");
         // test that carry propigates
-        let mut a2 = Accum::new();
-        a2.add_at_place(u32::MAX, 0);
-        a2.add_at_place(u32::MAX, 1);
-        a2.add_at_place(u32::MAX, 2);
-        assert_eq!(a2.to_hex_str(), "ffffffff ffffffff ffffffff");
-        a2.add(1);
-        assert_eq!(a2.to_hex_str(), "00000001 00000000 00000000 00000000");
-        a2.add_at_place(u32::MAX, 3);
-        assert_eq!(a2.to_hex_str(), "00000001 00000000 00000000 00000000 00000000");
+        let mut a = Accumulator::new();
+        a.add_at_place(u32::MAX, 0);
+        a.add_at_place(u32::MAX, 1);
+        a.add_at_place(u32::MAX, 2);
+        assert_eq!(a.to_hex_str(), "ffffffff ffffffff ffffffff");
+        a.add(1);
+        assert_eq!(a.to_hex_str(), "00000001 00000000 00000000 00000000");
+        a.add_at_place(u32::MAX, 3);
+        assert_eq!(a.to_hex_str(), "00000001 00000000 00000000 00000000 00000000");
     }
 
     #[test]
-    fn test_accum_add() {
+    fn add() {
         // test very basic addition and vector grows
-        let mut a = Accum::new();
+        let mut a = Accumulator::new();
         a.add(2);
         a.add(4);
         assert_eq!(a.to_hex_str(), "00000006");
@@ -135,31 +140,39 @@ mod tests {
     }
 
     #[test]
-    fn test_accum_sum() {
-        let mut a1 = Accum::new();
-        a1.add_at_place(u32::MAX, 0);
-        a1.add_at_place(u32::MAX, 1);
-        let mut a2 = Accum::new();
-        a2.add_at_place(u32::MAX, 0);
-        a2.add_at_place(u32::MAX, 1);
-        a2.add_at_place(1, 2);
-        a1.sum(&a2);
-        assert_eq!(a1.to_hex_str(), "00000002 ffffffff fffffffe");
-    }
-
-    #[test]
-    fn test_accum_mul() {
-        let mut a = Accum::new();
+    fn mul() {
+        let mut a = Accumulator::new();
         a.add_at_place(0xF0000000, 0);
         a.add_at_place(0xF0000000, 1);
         a.mul(2);
         assert_eq!(a.to_hex_str(), "00000001 e0000001 e0000000");
 
-        let mut a2 = Accum::new();
-        a2.add_at_place(u32::MAX, 2);
-        a2.add_at_place(u32::MAX, 1);
-        a2.add_at_place(u32::MAX, 0);
-        a2.mul(u32::MAX);
-        assert_eq!(a2.to_hex_str(), "fffffffe ffffffff ffffffff 00000001");
+        let mut a = Accumulator::new();
+        a.add_at_place(u32::MAX, 2);
+        a.add_at_place(u32::MAX, 1);
+        a.add_at_place(u32::MAX, 0);
+        a.mul(u32::MAX);
+        assert_eq!(a.to_hex_str(), "fffffffe ffffffff ffffffff 00000001");
+    }
+
+    #[test]
+    fn div() {
+        let mut a = Accumulator::new();
+        a.add(0xff);
+        let r = a.div(2);
+        assert_eq!(r, 1);
+        assert_eq!(a.to_hex_str(), "0000007f");
+
+        let mut a = Accumulator::new();
+        let encode: [u32; 4] = [u32::MAX-10000, u32::MAX-1000, u32::MAX-100, u32::MAX-10];
+        let mut decode: [u32; 4] = [0; 4];
+        for ii in 0..encode.len() {
+            a.mul(encode[ii]+1);
+            a.add(encode[ii]);
+        }
+        for ii in (0..4).rev() {
+            decode[ii] = a.div(encode[ii]+1);
+        }
+        assert_eq!(encode, decode);
     }
 }
