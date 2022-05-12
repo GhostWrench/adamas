@@ -16,6 +16,10 @@ impl Accum {
         Self {data: Vec::new()}
     }
 
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
     fn add_at_place(&mut self, value: u32, place: usize) {
         let mut carry: u64 = value as u64;
         let mut vec_index: usize = place;
@@ -24,19 +28,19 @@ impl Accum {
             return;
         }
         // add digits until the accumulator is big enough 
-        while vec_index > self.data.len() {
+        while vec_index > self.len() {
             self.data.push(0);
         }
         // Keep adding and carrying until the carry value is 0
         while carry != 0 {
-            if vec_index == self.data.len() {
+            if vec_index == self.len() {
                 self.data.push(carry as u32);
                 carry = 0;
             } else {
                 let result: u64 = carry + self.data[vec_index] as u64;
-                let parts: [u32; 2] = unsafe { transmute(result) };
-                self.data[vec_index] = parts[0];
-                carry = parts[1] as u64;
+                let [lsb, msb]: [u32; 2] = unsafe { transmute(result) };
+                self.data[vec_index] = lsb;
+                carry = msb as u64;
                 vec_index += 1;
             }
         }
@@ -46,9 +50,23 @@ impl Accum {
         self.add_at_place(value, 0);
     }
 
+    /// Sum another different accumulator into this accumulator
+    pub fn sum(&mut self, a: &Accum) {
+        for ii in 0..a.len() {
+            if ii >= self.len() {
+                self.add_at_place(a.data[ii], ii);
+            } else {
+                let sum: u64 = (self.data[ii] as u64) + (a.data[ii] as u64);
+                let [lsb, msb]: [u32; 2] = unsafe { transmute(sum) };
+                self.data[ii] = lsb;
+                self.add_at_place(msb, ii+1);
+            }
+        }
+    }
+
     pub fn mul(&mut self, value: u32) {
         // Multiply digit by digit starting with the most significant
-        for ii in (0..self.data.len()).rev() {
+        for ii in (0..self.len()).rev() {
             let result: u64 = (self.data[ii] as u64) * (value as u64);
             let [lsb, msb]: [u32; 2] = unsafe { transmute(result) };
             self.add_at_place(msb, ii+1);
@@ -56,15 +74,18 @@ impl Accum {
         }
     }
 
+    /*
     pub fn div(&mut self, value: u32) -> u32 {
         1
     }
+    */
 
     pub fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
-            let digit_str: String = format!("{:08x} ", digit);
-            s.push_str(&digit_str);
+            s.push_str(format!("{:08x} ", digit).as_str());
+            //let digit_str: String = format!("{:08x} ", digit);
+            //s.push_str(&digit_str);
         }
         s.pop();
         s
@@ -111,6 +132,19 @@ mod tests {
         assert_eq!(a.to_hex_str(), "00000001 00000005");
         a.add(0xf0);
         assert_eq!(a.to_hex_str(), "00000001 000000f5");
+    }
+
+    #[test]
+    fn test_accum_sum() {
+        let mut a1 = Accum::new();
+        a1.add_at_place(u32::MAX, 0);
+        a1.add_at_place(u32::MAX, 1);
+        let mut a2 = Accum::new();
+        a2.add_at_place(u32::MAX, 0);
+        a2.add_at_place(u32::MAX, 1);
+        a2.add_at_place(1, 2);
+        a1.sum(&a2);
+        assert_eq!(a1.to_hex_str(), "00000002 ffffffff fffffffe");
     }
 
     #[test]
