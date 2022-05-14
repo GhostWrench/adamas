@@ -3,4 +3,4 @@
 //! Description
 
 mod accum;
-mod data;
+mod datum;

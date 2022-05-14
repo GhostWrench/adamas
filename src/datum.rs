@@ -129,7 +129,7 @@ impl Datum<String> for Enum {
 /// Tests for this module
 mod tests {
 
-    use crate::data::{Datum, Range, Bool, Enum};
+    use crate::datum::{Datum, Range, Bool, Enum};
 
     #[test]
     fn range() {
