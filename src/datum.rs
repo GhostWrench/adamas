@@ -9,6 +9,35 @@ pub trait Datum<T> {
     fn decode(&self, value: u32) -> Result<T, &str>;
 }
 
+/// Boolean type, encodes a boolean
+pub struct Bool {}
+
+impl Bool {
+
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Datum<bool> for Bool {
+
+    fn permutations(&self) -> u32 {
+        2
+    }
+
+    fn encode(&self, input: bool) -> Result<u32, &str> {
+        Ok(input as u32)
+    }
+
+    fn decode(&self, input: u32) -> Result<bool, &str> {
+        match input {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err("Could not decode the given value as boolean")
+        }
+    }
+}
+
 /// Range type, encodes an integer range
 pub struct Range {
     min: i32,
@@ -54,31 +83,54 @@ impl Datum<i32> for Range {
     }
 }
 
-/// Boolean type, encodes a boolean
-pub struct Bool {}
-
-impl Bool {
-
-    pub fn new() -> Self {
-        Self {}
-    }
+/// CharSet type, encodes a set of characters
+pub struct CharSet {
+    charset: Vec<char>,
+    lookup: HashMap<char, usize>,
 }
 
-impl Datum<bool> for Bool {
+impl CharSet {
+
+    pub fn new(charset: &'static str) -> Self {
+        let charset: Vec<char> = charset.chars().collect();
+        let mut lookup: HashMap<char, usize> = HashMap::with_capacity(charset.len());
+        for ii in 0..charset.len() {
+            lookup.insert(charset[ii], ii);
+        }
+        Self { charset, lookup }
+    }
+
+    pub fn lowercase_ascii() -> Self {
+        Self::new("abcdefghijklmnopqrstuvwxyz .!?0123456789()&@#$%:;'\"")
+    }
+
+    pub fn upercase_ascii() -> Self {
+        Self::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ .!?0123456789()&@#$%:;'\"")
+    }
+
+}
+
+impl Datum<char> for CharSet {
 
     fn permutations(&self) -> u32 {
-        2
+        self.charset.len() as u32
     }
 
-    fn encode(&self, input: bool) -> Result<u32, &str> {
-        Ok(input as u32)
+    fn encode(&self, input: char) -> Result<u32, &str> {
+        let value = self.lookup.get(&input);
+        match value {
+            None => Err("Could not encode character not defined in the character set"),
+            Some(value) => Ok(*value as u32)
+        }
     }
 
-    fn decode(&self, input: u32) -> Result<bool, &str> {
-        match input {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err("Could not decode the given value as boolean")
+    fn decode(&self, input:u32) -> Result<char, &str> {
+        let index = input as usize;
+        if index >= self.charset.len() {
+            Err("Could not decode value to a character")
+        } else {
+            let result = self.charset[index];
+            Ok(result)
         }
     }
 }
@@ -129,7 +181,18 @@ impl Datum<String> for Enum {
 /// Tests for this module
 mod tests {
 
-    use crate::datum::{Datum, Range, Bool, Enum};
+    use crate::datum::{Datum, Bool, Range, CharSet, Enum};
+
+    #[test]
+    fn bool() {
+        let b = Bool::new();
+        assert_eq!(b.permutations(), 2);
+        assert_eq!(b.encode(false).unwrap(), 0);
+        assert_eq!(b.encode(true).unwrap(), 1);
+        assert_eq!(b.decode(0).unwrap(), false);
+        assert_eq!(b.decode(1).unwrap(), true);
+        assert!(b.decode(2).is_err());
+    }
 
     #[test]
     fn range() {
@@ -147,14 +210,17 @@ mod tests {
     }
 
     #[test]
-    fn bool() {
-        let b = Bool::new();
-        assert_eq!(b.permutations(), 2);
-        assert_eq!(b.encode(false).unwrap(), 0);
-        assert_eq!(b.encode(true).unwrap(), 1);
-        assert_eq!(b.decode(0).unwrap(), false);
-        assert_eq!(b.decode(1).unwrap(), true);
-        assert!(b.decode(2).is_err());
+    fn charset() {
+        let cs = CharSet::new("abcあいうえお123$正體字");
+        assert_eq!(cs.permutations(), 15);
+        assert_eq!(cs.encode('あ').unwrap(), 3);
+        assert_eq!(cs.encode('1').unwrap(), 8);
+        assert_eq!(cs.encode('字').unwrap(), 14);
+        assert_eq!(cs.decode(0).unwrap(), 'a');
+        assert_eq!(cs.decode(7).unwrap(), 'お');
+        assert_eq!(cs.decode(14).unwrap(), '字');
+        assert!(cs.encode('0').is_err());
+        assert!(cs.decode(15).is_err());
     }
 
     #[test]
