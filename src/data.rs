@@ -181,7 +181,7 @@ impl DatumSpec<String> for Enum {
 /// Tests for this module
 mod tests {
 
-    use crate::datum::{DatumSpec, Bool, Range, CharSet, Enum};
+    use crate::data::{DatumSpec, Bool, Range, CharSet, Enum};
 
     #[test]
     fn bool() {

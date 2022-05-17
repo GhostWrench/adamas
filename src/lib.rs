@@ -1,6 +1,6 @@
 //! Adamas
 //! 
-//! Description
+//! Rust library for compressing small amounts of structured data
 
 mod accum;
-mod datum;
+pub mod data;
