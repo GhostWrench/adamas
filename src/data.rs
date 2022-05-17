@@ -3,12 +3,14 @@
 use std::result::Result;
 use std::collections::HashMap;
 
+use crate::{Block, SignedBlock, SignedDoubleBlock};
+
 /// Trait used to define a piece of data that can be compressed to a small 
 /// binary representation
 pub trait DatumSpec<T> {
-    fn permutations(&self) -> u32;
-    fn encode(&self, input: T) -> Result<u32, &str>;
-    fn decode(&self, value: u32) -> Result<T, &str>;
+    fn permutations(&self) -> Block;
+    fn encode(&self, input: T) -> Result<Block, &str>;
+    fn decode(&self, value: Block) -> Result<T, &str>;
 }
 
 /// Boolean type specification
@@ -23,15 +25,15 @@ impl Bool {
 
 impl DatumSpec<bool> for Bool {
 
-    fn permutations(&self) -> u32 {
+    fn permutations(&self) -> Block {
         2
     }
 
-    fn encode(&self, input: bool) -> Result<u32, &str> {
-        Ok(input as u32)
+    fn encode(&self, input: bool) -> Result<Block, &str> {
+        Ok(input as Block)
     }
 
-    fn decode(&self, input: u32) -> Result<bool, &str> {
+    fn decode(&self, input: Block) -> Result<bool, &str> {
         match input {
             0 => Ok(false),
             1 => Ok(true),
@@ -42,14 +44,14 @@ impl DatumSpec<bool> for Bool {
 
 /// Integer Range type specification
 pub struct IntRange {
-    min: i32,
-    max: i32,
+    min: SignedBlock,
+    max: SignedBlock,
 }
 
 impl IntRange {
-    pub fn new(min: i32, max: i32) -> Self {
-        if min < (i32::MIN + 1) {
-            panic!("IntRange min cannot be less than i32::MIN + 1");
+    pub fn new(min: SignedBlock, max: SignedBlock) -> Self {
+        if min < (SignedBlock::MIN + 1) {
+            panic!("IntRange min cannot be less than SignedBlock::MIN + 1");
         }
         // Check if input is valid
         if min >= max {
@@ -59,28 +61,28 @@ impl IntRange {
     }
 
     pub fn new_full() -> Self {
-        Self::new(i32::MIN+1, i32::MAX)
+        Self::new(SignedBlock::MIN+1, SignedBlock::MAX)
     }
 }
 
-impl DatumSpec<i32> for IntRange {
+impl DatumSpec<SignedBlock> for IntRange {
 
-    fn permutations(&self) -> u32 {
-        (self.max - self.min + 1) as u32
+    fn permutations(&self) -> Block {
+        (self.max - self.min + 1) as Block
     }
 
-    fn encode(&self, input: i32) -> Result<u32, &str> {
+    fn encode(&self, input: SignedBlock) -> Result<Block, &str> {
         if input < self.min || input > self.max {
             return Err("Value to encode is outside allowed range");
         }
-        Ok((input - self.min) as u32)
+        Ok((input - self.min) as Block)
     }
 
-    fn decode(&self, input: u32) -> Result<i32, &str> {
+    fn decode(&self, input: Block) -> Result<SignedBlock, &str> {
         if input >= self.permutations() {
             return Err("Cannot decode data, input larger than possible permutations");
         }
-        let result = (input as i64 + self.min as i64) as i32;
+        let result = (input as SignedDoubleBlock + self.min as SignedDoubleBlock) as SignedBlock;
         Ok(result) 
     }
 }
@@ -115,19 +117,19 @@ impl CharSet {
 
 impl DatumSpec<char> for CharSet {
 
-    fn permutations(&self) -> u32 {
-        self.charset.len() as u32
+    fn permutations(&self) -> Block {
+        self.charset.len() as Block
     }
 
-    fn encode(&self, input: char) -> Result<u32, &str> {
+    fn encode(&self, input: char) -> Result<Block, &str> {
         let value = self.lookup.get(&input);
         match value {
             None => Err("Could not encode character not defined in the character set"),
-            Some(value) => Ok(*value as u32)
+            Some(value) => Ok(*value as Block)
         }
     }
 
-    fn decode(&self, input:u32) -> Result<char, &str> {
+    fn decode(&self, input: Block) -> Result<char, &str> {
         let index = input as usize;
         if index >= self.charset.len() {
             Err("Could not decode value to a character")
@@ -157,19 +159,19 @@ impl Enum {
 
 impl DatumSpec<String> for Enum {
 
-    fn permutations(&self) -> u32 {
-        self.options.len() as u32
+    fn permutations(&self) -> Block {
+        self.options.len() as Block
     }
 
-    fn encode(&self, input: String) -> Result<u32, &str> {
+    fn encode(&self, input: String) -> Result<Block, &str> {
         let value = self.lookup.get(&input);
         match value {
             None => Err("Given value not contained in this Enum type"),
-            Some(value) => Ok(*value as u32),
+            Some(value) => Ok(*value as Block),
         }
     }
 
-    fn decode(&self, input: u32) -> Result<String, &str> {
+    fn decode(&self, input: Block) -> Result<String, &str> {
         let index = input as usize;
         if index >= self.options.len() {
             Err("Could not decode value as an Enum")
