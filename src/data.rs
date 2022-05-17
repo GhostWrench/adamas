@@ -3,13 +3,15 @@
 use std::result::Result;
 use std::collections::HashMap;
 
+/// Trait used to define a piece of data that can be compressed to a small 
+/// binary representation
 pub trait DatumSpec<T> {
     fn permutations(&self) -> u32;
     fn encode(&self, input: T) -> Result<u32, &str>;
     fn decode(&self, value: u32) -> Result<T, &str>;
 }
 
-/// Boolean type, encodes a boolean
+/// Boolean type specification
 pub struct Bool {}
 
 impl Bool {
@@ -38,20 +40,20 @@ impl DatumSpec<bool> for Bool {
     }
 }
 
-/// Range type, encodes an integer range
-pub struct Range {
+/// Integer Range type specification
+pub struct IntRange {
     min: i32,
     max: i32,
 }
 
-impl Range {
+impl IntRange {
     pub fn new(min: i32, max: i32) -> Self {
         if min < (i32::MIN + 1) {
-            panic!("Range min cannot be less than i32::MIN + 1");
+            panic!("IntRange min cannot be less than i32::MIN + 1");
         }
         // Check if input is valid
         if min >= max {
-            panic!("Range min may not be greater than or equal to the max");
+            panic!("IntRange min may not be greater than or equal to the max");
         }
         Self {min, max}
     }
@@ -61,7 +63,7 @@ impl Range {
     }
 }
 
-impl DatumSpec<i32> for Range {
+impl DatumSpec<i32> for IntRange {
 
     fn permutations(&self) -> u32 {
         (self.max - self.min + 1) as u32
@@ -83,7 +85,8 @@ impl DatumSpec<i32> for Range {
     }
 }
 
-/// CharSet type, encodes a set of characters
+
+/// CharSet type specification
 pub struct CharSet {
     charset: Vec<char>,
     lookup: HashMap<char, usize>,
@@ -135,7 +138,7 @@ impl DatumSpec<char> for CharSet {
     }
 }
 
-/// Enumeration type, encodes a selection of different strings
+/// Enumeration type specification
 pub struct Enum {
     options: &'static [&'static str],
     lookup: HashMap<String, usize>,
@@ -181,7 +184,7 @@ impl DatumSpec<String> for Enum {
 /// Tests for this module
 mod tests {
 
-    use crate::data::{DatumSpec, Bool, Range, CharSet, Enum};
+    use crate::data::{DatumSpec, Bool, IntRange, CharSet, Enum};
 
     #[test]
     fn bool() {
@@ -196,7 +199,7 @@ mod tests {
 
     #[test]
     fn range() {
-        let r = Range::new(-10, 10);
+        let r = IntRange::new(-10, 10);
         assert_eq!(r.permutations(), 21);
         // low values
         assert_eq!(r.encode(-10).unwrap(), 0);
