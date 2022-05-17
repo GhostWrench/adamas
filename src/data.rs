@@ -3,7 +3,7 @@
 use std::result::Result;
 use std::collections::HashMap;
 
-pub trait Datum<T> {
+pub trait DatumSpec<T> {
     fn permutations(&self) -> u32;
     fn encode(&self, input: T) -> Result<u32, &str>;
     fn decode(&self, value: u32) -> Result<T, &str>;
@@ -19,7 +19,7 @@ impl Bool {
     }
 }
 
-impl Datum<bool> for Bool {
+impl DatumSpec<bool> for Bool {
 
     fn permutations(&self) -> u32 {
         2
@@ -61,7 +61,7 @@ impl Range {
     }
 }
 
-impl Datum<i32> for Range {
+impl DatumSpec<i32> for Range {
 
     fn permutations(&self) -> u32 {
         (self.max - self.min + 1) as u32
@@ -110,7 +110,7 @@ impl CharSet {
 
 }
 
-impl Datum<char> for CharSet {
+impl DatumSpec<char> for CharSet {
 
     fn permutations(&self) -> u32 {
         self.charset.len() as u32
@@ -152,7 +152,7 @@ impl Enum {
     }
 }
 
-impl Datum<String> for Enum {
+impl DatumSpec<String> for Enum {
 
     fn permutations(&self) -> u32 {
         self.options.len() as u32
@@ -181,7 +181,7 @@ impl Datum<String> for Enum {
 /// Tests for this module
 mod tests {
 
-    use crate::datum::{Datum, Bool, Range, CharSet, Enum};
+    use crate::datum::{DatumSpec, Bool, Range, CharSet, Enum};
 
     #[test]
     fn bool() {
