@@ -100,16 +100,27 @@ impl CharSet {
         let charset: Vec<char> = charset.chars().collect();
         let mut lookup: HashMap<char, usize> = HashMap::with_capacity(charset.len());
         for ii in 0..charset.len() {
+            if lookup.contains_key(&charset[ii]) {
+                panic!("Attempted to add duplicate characters to CharSet data");
+            }
             lookup.insert(charset[ii], ii);
         }
         Self { charset, lookup }
+    }
+
+    pub fn lowercase_letter() -> Self {
+        Self::new("abcdefghijklmnopqrstuvwxyz")
     }
 
     pub fn lowercase_ascii() -> Self {
         Self::new("abcdefghijklmnopqrstuvwxyz .!?0123456789()&@#$%:;'\"")
     }
 
-    pub fn upercase_ascii() -> Self {
+    pub fn uppercase_letter() -> Self {
+        Self::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    }
+
+    pub fn uppercase_ascii() -> Self {
         Self::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ .!?0123456789()&@#$%:;'\"")
     }
 
@@ -151,7 +162,11 @@ impl Enum {
     pub fn new(options: &'static [&'static str]) -> Self {
         let mut lookup = HashMap::with_capacity(options.len());
         for ii in 0..options.len() {
-            lookup.insert(String::from(options[ii]), ii);
+            let new_option = String::from(options[ii]);
+            if lookup.contains_key(&new_option) {
+                panic!("Attempted to add duplicate strings to Enum data");
+            }
+            lookup.insert(new_option, ii);
         }
         Self{ options, lookup }
     }
