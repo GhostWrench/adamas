@@ -94,14 +94,61 @@ impl Accumulator {
                 result = transmute(num / den);
                 rem = transmute(num % den);
             }
-            if result[0] == 0 {
+            self.data[ii] = result[0];
+        }
+        // Remove most significant digit if it is 0
+        if let Some(msd) = self.data.last() {
+            if *msd == 0 {
                 self.data.pop();
-            }
-            else {
-                self.data[ii] = result[0];
             }
         }
         rem[0]
+    }
+
+    /// Shift the accumulator to the left (multiply by a power of 2)
+    pub fn shl(&mut self, shift: usize) {
+        // error if trying to shift more than the number of bits in Block
+        if shift > Block::BITS as usize {
+            panic!("Can not apply shift to accumulator greater than 64");
+        }
+        let mut carry: Block = 0;
+        // loop through digits and apply the shift
+        for ii in 0..self.data.len() {
+            let result: DoubleBlock = ((self.data[ii] as DoubleBlock) << shift) + carry as DoubleBlock;
+            let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+            self.data[ii] = lsb;
+            carry = msb;
+        }
+        if carry > 0 {
+            self.data.push(carry);
+        }
+    }
+
+    /// Shift the accumulator to the right (divide by a factor of 2)
+    pub fn shr(&mut self, shift: usize) -> Block {
+        // error if trying to shift more than the number of bits in Block
+        if shift > Block::BITS as usize {
+            panic!("Can not apply shift to accumulator greater than 64");
+        }
+        // loop through digits and apply the shift
+        let mut carry: Block = 0;
+        for ii in (0..self.data.len()).rev() {
+            let result: [Block; 2] = [0, self.data[ii]];
+            let mut result: DoubleBlock = unsafe { transmute(result) };
+            result >>= shift;
+            result += (carry as DoubleBlock) << Block::BITS;
+            let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+            carry = lsb;
+            self.data[ii] = msb;
+        } 
+        // Remove most significant digit if it is 0
+        if let Some(msd) = self.data.last() {
+            if *msd == 0 {
+                self.data.pop();
+            }
+        }
+        carry >>= Block::BITS - shift as u32;
+        carry
     }
 
     /// Retrieve the contents of the accumulator as a hex string
@@ -182,7 +229,7 @@ mod tests {
         let r = a.div(2);
         assert_eq!(r, 1);
         assert_eq!(a.to_hex_str(), "000000000000007f");
-
+        // Use divides to encode values
         let mut a = Accumulator::new();
         let encode: [Block; 4] = [Block::MAX-10000, Block::MAX-1000, Block::MAX-100, Block::MAX-10];
         let mut decode: [Block; 4] = [0; 4];
@@ -190,6 +237,10 @@ mod tests {
             a.mul(encode[ii]+1);
             a.add(encode[ii]);
         }
+        // test divide by 1
+        let ahex = a.to_hex_str();
+        a.div(1);
+        assert_eq!(ahex, a.to_hex_str());
         for ii in (0..4).rev() {
             decode[ii] = a.div(encode[ii]+1);
         }
@@ -203,5 +254,32 @@ mod tests {
         a.mul(Block::MAX);
         a.div(Block::MAX);
         assert_eq!(a.to_hex_str(), "ffffffffffffffff");
+    }
+
+    #[test]
+    fn shift() {
+        let mut a = Accumulator::new();
+        a.add(0xa00000000000000b);
+        a.shl(4);
+        assert_eq!(a.to_hex_str(), "000000000000000a 00000000000000b0");
+        a.shl(64);
+        assert_eq!(a.to_hex_str(), "000000000000000a 00000000000000b0 0000000000000000");
+        a.shr(60);
+        assert_eq!(a.to_hex_str(), "00000000000000a0 0000000000000b00");
+        let rem = a.shr(12);
+        assert_eq!(a.to_hex_str(), "0a00000000000000");
+        assert_eq!(rem, 0xb00);
+        // Use shifts to encode values
+        let mut a = Accumulator::new();
+        let encode: [Block; 4] = [10, 20, 50, 250];
+        let mut decode: [Block; 4] = [0; 4];
+        for ii in 0..encode.len() {
+            a.shl(8);
+            a.add(encode[ii]);
+        }
+        for ii in (0..4).rev() {
+            decode[ii] = a.shr(8);
+        }
+        assert_eq!(encode, decode);
     }
 }
