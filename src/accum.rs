@@ -10,13 +10,12 @@
 
 use std::vec::Vec;
 use std::string::String;
-use std::mem::transmute;
 
-use crate::{Block, DoubleBlock};
+use crate::{Digit, DoubleDigit};
 
 #[derive(Debug)]
 pub struct Accumulator {
-    data: Vec<Block>,
+    data: Vec<Digit>,
 }
 
 impl Accumulator {
@@ -26,7 +25,7 @@ impl Accumulator {
         Self {data: Vec::new()}
     }
 
-    /// Get the length of the internal Block array used to store the accumulated
+    /// Get the length of the internal Digit array used to store the accumulated
     /// data
     pub fn len(&self) -> usize {
         self.data.len()
@@ -36,8 +35,8 @@ impl Accumulator {
     /// 
     /// Example using the base 10 equivalent:
     /// +200 (add 2 to third digit) vs. +2 (add 2 to first digit) 
-    fn add_at_place(&mut self, value: Block, place: usize) {
-        let mut carry: DoubleBlock = value as DoubleBlock;
+    fn add_at_place(&mut self, value: Digit, place: usize) {
+        let mut carry: DoubleDigit = value as DoubleDigit;
         let mut vec_index: usize = place;
         // do nothing if the value is 0
         if value == 0 {
@@ -50,50 +49,48 @@ impl Accumulator {
         // Keep adding and carrying until the carry value is 0
         while carry != 0 {
             if vec_index == self.len() {
-                self.data.push(carry as Block);
+                self.data.push(carry as Digit);
                 carry = 0;
             } else {
-                let result: DoubleBlock = carry + self.data[vec_index] as DoubleBlock;
-                let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+                let result: DoubleDigit = carry + self.data[vec_index] as DoubleDigit;
+                let [lsb, msb]: [Digit; 2] = chop_digits(result);
                 self.data[vec_index] = lsb;
-                carry = msb as DoubleBlock;
+                carry = msb as DoubleDigit;
                 vec_index += 1;
             }
         }
     }
 
     /// Add a value to the accumulator
-    pub fn add(&mut self, value: Block) {
+    pub fn add(&mut self, value: Digit) {
         self.add_at_place(value, 0);
     }
 
     /// Multiply the accumulator by a value
-    pub fn mul(&mut self, value: Block) {
+    pub fn mul(&mut self, value: Digit) {
         // Multiply digit by digit starting with the most significant
         for ii in (0..self.len()).rev() {
-            let result: DoubleBlock = (self.data[ii] as DoubleBlock) * (value as DoubleBlock);
-            let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+            let result: DoubleDigit = (self.data[ii] as DoubleDigit) * (value as DoubleDigit);
+            let [lsb, msb]: [Digit; 2] = chop_digits(result);
             self.add_at_place(msb, ii+1);
             self.data[ii] = lsb;
         }
     }
 
     /// Divide the accumulator by a value and return the remainder
-    pub fn div(&mut self, value: Block) -> Block {
+    pub fn div(&mut self, value: Digit) -> Digit {
         // Check for divide by zero and panic
         if value == 0 {
             panic!("Cannot divide by zero!");
         }
-        let den: DoubleBlock = value as DoubleBlock;
-        let mut rem: [Block; 2] = [0; 2];
+        let den: DoubleDigit = value as DoubleDigit;
+        let mut rem: [Digit; 2] = [0; 2];
         for ii in (0..self.len()).rev() {
-            let num: [Block; 2] = [self.data[ii], rem[0]];
-            let result: [Block; 2];
-            unsafe {
-                let num: DoubleBlock = transmute(num);
-                result = transmute(num / den);
-                rem = transmute(num % den);
-            }
+            let num: [Digit; 2] = [self.data[ii], rem[0]];
+            let result: [Digit; 2];
+            let num: DoubleDigit = fuse_digits(num);
+            result = chop_digits(num / den);
+            rem = chop_digits(num % den);
             self.data[ii] = result[0];
         }
         // Remove most significant digit if it is 0
@@ -107,15 +104,15 @@ impl Accumulator {
 
     /// Shift the accumulator to the left (multiply by a power of 2)
     pub fn shl(&mut self, shift: usize) {
-        // error if trying to shift more than the number of bits in Block
-        if shift > Block::BITS as usize {
+        // error if trying to shift more than the number of bits in Digit
+        if shift > Digit::BITS as usize {
             panic!("Can not apply shift to accumulator greater than 64");
         }
-        let mut carry: Block = 0;
+        let mut carry: Digit = 0;
         // loop through digits and apply the shift
         for ii in 0..self.data.len() {
-            let result: DoubleBlock = ((self.data[ii] as DoubleBlock) << shift) + carry as DoubleBlock;
-            let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+            let result: DoubleDigit = ((self.data[ii] as DoubleDigit) << shift) + carry as DoubleDigit;
+            let [lsb, msb]: [Digit; 2] = chop_digits(result);
             self.data[ii] = lsb;
             carry = msb;
         }
@@ -125,19 +122,19 @@ impl Accumulator {
     }
 
     /// Shift the accumulator to the right (divide by a factor of 2)
-    pub fn shr(&mut self, shift: usize) -> Block {
-        // error if trying to shift more than the number of bits in Block
-        if shift > Block::BITS as usize {
+    pub fn shr(&mut self, shift: usize) -> Digit {
+        // error if trying to shift more than the number of bits in Digit
+        if shift > Digit::BITS as usize {
             panic!("Can not apply shift to accumulator greater than 64");
         }
         // loop through digits and apply the shift
-        let mut carry: Block = 0;
+        let mut carry: Digit = 0;
         for ii in (0..self.data.len()).rev() {
-            let result: [Block; 2] = [0, self.data[ii]];
-            let mut result: DoubleBlock = unsafe { transmute(result) };
+            let result: [Digit; 2] = [0, self.data[ii]];
+            let mut result: DoubleDigit = fuse_digits(result);
             result >>= shift;
-            result += (carry as DoubleBlock) << Block::BITS;
-            let [lsb, msb]: [Block; 2] = unsafe { transmute(result) };
+            result += (carry as DoubleDigit) << Digit::BITS;
+            let [lsb, msb]: [Digit; 2] = chop_digits(result);
             carry = lsb;
             self.data[ii] = msb;
         } 
@@ -147,7 +144,7 @@ impl Accumulator {
                 self.data.pop();
             }
         }
-        carry >>= Block::BITS - shift as u32;
+        carry >>= Digit::BITS - shift as u32;
         carry
     }
 
@@ -155,7 +152,7 @@ impl Accumulator {
     fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
-            // formatting of this string is hardcoded to match the "Block" type
+            // formatting of this string is hardcoded to match the "Digit" type
             s.push_str(format!("{:016x} ", digit).as_str());
         }
         s.pop();
@@ -163,11 +160,29 @@ impl Accumulator {
     }
 }
 
+/// Combine two Digits into a DoubleDigit
+fn fuse_digits(digits: [Digit; 2]) -> DoubleDigit {
+    // Note:
+    // digits[0] is the least significant digit LSD
+    // digits[1] is the most significant digit MSD
+    let mut result: DoubleDigit = 0;
+    result += digits[0] as DoubleDigit;
+    result += (digits[1] as DoubleDigit) << Digit::BITS;
+    result
+}
+
+/// Separate a DoubleDigit into two Digits
+fn chop_digits(digits: DoubleDigit) -> [Digit; 2] {
+    let msd: DoubleDigit = digits >> Digit::BITS;
+    let lsd: DoubleDigit = digits - (msd << Digit::BITS);
+    [lsd as Digit, msd as Digit]
+}
+
 #[cfg(test)]
 mod tests {
 
     use crate::accum::Accumulator;
-    use crate::Block;
+    use crate::Digit;
 
     #[test]
     fn add_at_place() {
@@ -179,17 +194,17 @@ mod tests {
         assert_eq!(a.to_hex_str(), "0000000000000003 0000000000000002 0000000000000000");
         a.add_at_place(1, 0);
         assert_eq!(a.to_hex_str(), "0000000000000003 0000000000000002 0000000000000001");
-        a.add_at_place(Block::MAX, 1);
+        a.add_at_place(Digit::MAX, 1);
         assert_eq!(a.to_hex_str(), "0000000000000004 0000000000000001 0000000000000001");
         // test that carry propigates
         let mut a = Accumulator::new();
-        a.add_at_place(Block::MAX, 0);
-        a.add_at_place(Block::MAX, 1);
-        a.add_at_place(Block::MAX, 2);
+        a.add_at_place(Digit::MAX, 0);
+        a.add_at_place(Digit::MAX, 1);
+        a.add_at_place(Digit::MAX, 2);
         assert_eq!(a.to_hex_str(), "ffffffffffffffff ffffffffffffffff ffffffffffffffff");
         a.add(1);
         assert_eq!(a.to_hex_str(), "0000000000000001 0000000000000000 0000000000000000 0000000000000000");
-        a.add_at_place(Block::MAX, 3);
+        a.add_at_place(Digit::MAX, 3);
         assert_eq!(a.to_hex_str(), "0000000000000001 0000000000000000 0000000000000000 0000000000000000 0000000000000000");
     }
 
@@ -200,7 +215,7 @@ mod tests {
         a.add(2);
         a.add(4);
         assert_eq!(a.to_hex_str(), "0000000000000006");
-        a.add(Block::MAX);
+        a.add(Digit::MAX);
         assert_eq!(a.to_hex_str(), "0000000000000001 0000000000000005");
         a.add(0xf0);
         assert_eq!(a.to_hex_str(), "0000000000000001 00000000000000f5");
@@ -215,10 +230,10 @@ mod tests {
         assert_eq!(a.to_hex_str(), "0000000000000001 e000000000000001 e000000000000000");
 
         let mut a = Accumulator::new();
-        a.add_at_place(Block::MAX, 2);
-        a.add_at_place(Block::MAX, 1);
-        a.add_at_place(Block::MAX, 0);
-        a.mul(Block::MAX);
+        a.add_at_place(Digit::MAX, 2);
+        a.add_at_place(Digit::MAX, 1);
+        a.add_at_place(Digit::MAX, 0);
+        a.mul(Digit::MAX);
         assert_eq!(a.to_hex_str(), "fffffffffffffffe ffffffffffffffff ffffffffffffffff 0000000000000001");
     }
 
@@ -231,8 +246,8 @@ mod tests {
         assert_eq!(a.to_hex_str(), "000000000000007f");
         // Use divides to encode values
         let mut a = Accumulator::new();
-        let encode: [Block; 4] = [Block::MAX-10000, Block::MAX-1000, Block::MAX-100, Block::MAX-10];
-        let mut decode: [Block; 4] = [0; 4];
+        let encode: [Digit; 4] = [Digit::MAX-10000, Digit::MAX-1000, Digit::MAX-100, Digit::MAX-10];
+        let mut decode: [Digit; 4] = [0; 4];
         for ii in 0..encode.len() {
             a.mul(encode[ii]+1);
             a.add(encode[ii]);
@@ -250,9 +265,9 @@ mod tests {
     #[test]
     fn all_three() {
         let mut a = Accumulator::new();
-        a.add(Block::MAX);
-        a.mul(Block::MAX);
-        a.div(Block::MAX);
+        a.add(Digit::MAX);
+        a.mul(Digit::MAX);
+        a.div(Digit::MAX);
         assert_eq!(a.to_hex_str(), "ffffffffffffffff");
     }
 
@@ -271,8 +286,8 @@ mod tests {
         assert_eq!(rem, 0xb00);
         // Use shifts to encode values
         let mut a = Accumulator::new();
-        let encode: [Block; 4] = [10, 20, 50, 250];
-        let mut decode: [Block; 4] = [0; 4];
+        let encode: [Digit; 4] = [10, 20, 50, 250];
+        let mut decode: [Digit; 4] = [0; 4];
         for ii in 0..encode.len() {
             a.shl(8);
             a.add(encode[ii]);

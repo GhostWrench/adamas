@@ -3,7 +3,7 @@
 use std::result::Result;
 use std::collections::HashMap;
 
-use crate::{Block, SignedBlock, SignedDoubleBlock};
+use crate::{Digit, SignedDigit, SignedDoubleDigit};
 use crate::accum::Accumulator;
 
 pub enum Length {
@@ -88,9 +88,9 @@ impl<'a, T> Sequence<'a, T> {
 /// Trait used to define a piece of data that can be compressed to a small 
 /// binary representation
 pub trait DatumSpec<T> {
-    fn permutations(&self) -> Block;
-    fn encode(&self, input: &T) -> Result<Block, &str>;
-    fn decode(&self, value: Block) -> Result<T, &str>;
+    fn permutations(&self) -> Digit;
+    fn encode(&self, input: &T) -> Result<Digit, &str>;
+    fn decode(&self, value: Digit) -> Result<T, &str>;
 }
 
 /// Boolean type specification
@@ -105,15 +105,15 @@ impl Bool {
 
 impl DatumSpec<bool> for Bool {
 
-    fn permutations(&self) -> Block {
+    fn permutations(&self) -> Digit {
         2
     }
 
-    fn encode(&self, input: &bool) -> Result<Block, &str> {
-        Ok(input.clone() as Block)
+    fn encode(&self, input: &bool) -> Result<Digit, &str> {
+        Ok(input.clone() as Digit)
     }
 
-    fn decode(&self, input: Block) -> Result<bool, &str> {
+    fn decode(&self, input: Digit) -> Result<bool, &str> {
         match input {
             0 => Ok(false),
             1 => Ok(true),
@@ -124,14 +124,14 @@ impl DatumSpec<bool> for Bool {
 
 /// Integer Range type specification
 pub struct IntRange {
-    min: SignedBlock,
-    max: SignedBlock,
+    min: SignedDigit,
+    max: SignedDigit,
 }
 
 impl IntRange {
-    pub fn new(min: SignedBlock, max: SignedBlock) -> Self {
-        if min < (SignedBlock::MIN + 1) {
-            panic!("IntRange min cannot be less than SignedBlock::MIN + 1");
+    pub fn new(min: SignedDigit, max: SignedDigit) -> Self {
+        if min < (SignedDigit::MIN + 1) {
+            panic!("IntRange min cannot be less than SignedDigit::MIN + 1");
         }
         // Check if input is valid
         if min >= max {
@@ -141,28 +141,28 @@ impl IntRange {
     }
 
     pub fn new_full() -> Self {
-        Self::new(SignedBlock::MIN+1, SignedBlock::MAX)
+        Self::new(SignedDigit::MIN+1, SignedDigit::MAX)
     }
 }
 
-impl DatumSpec<SignedBlock> for IntRange {
+impl DatumSpec<SignedDigit> for IntRange {
 
-    fn permutations(&self) -> Block {
-        (self.max - self.min + 1) as Block
+    fn permutations(&self) -> Digit {
+        (self.max - self.min + 1) as Digit
     }
 
-    fn encode(&self, input: &SignedBlock) -> Result<Block, &str> {
+    fn encode(&self, input: &SignedDigit) -> Result<Digit, &str> {
         if *input < self.min || *input > self.max {
             return Err("Value to encode is outside allowed range");
         }
-        Ok((*input - self.min) as Block)
+        Ok((*input - self.min) as Digit)
     }
 
-    fn decode(&self, input: Block) -> Result<SignedBlock, &str> {
+    fn decode(&self, input: Digit) -> Result<SignedDigit, &str> {
         if input >= self.permutations() {
             return Err("Cannot decode data, input larger than possible permutations");
         }
-        let result = (input as SignedDoubleBlock + self.min as SignedDoubleBlock) as SignedBlock;
+        let result = (input as SignedDoubleDigit + self.min as SignedDoubleDigit) as SignedDigit;
         Ok(result) 
     }
 }
@@ -208,19 +208,19 @@ impl CharSet {
 
 impl DatumSpec<char> for CharSet {
 
-    fn permutations(&self) -> Block {
-        self.charset.len() as Block
+    fn permutations(&self) -> Digit {
+        self.charset.len() as Digit
     }
 
-    fn encode(&self, input: &char) -> Result<Block, &str> {
+    fn encode(&self, input: &char) -> Result<Digit, &str> {
         let value = self.lookup.get(&input);
         match value {
             None => Err("Could not encode character not defined in the character set"),
-            Some(value) => Ok(value.clone() as Block)
+            Some(value) => Ok(value.clone() as Digit)
         }
     }
 
-    fn decode(&self, input: Block) -> Result<char, &str> {
+    fn decode(&self, input: Digit) -> Result<char, &str> {
         let index = input as usize;
         if index >= self.charset.len() {
             Err("Could not decode value to a character")
@@ -254,19 +254,19 @@ impl Enum {
 
 impl DatumSpec<String> for Enum {
 
-    fn permutations(&self) -> Block {
-        self.options.len() as Block
+    fn permutations(&self) -> Digit {
+        self.options.len() as Digit
     }
 
-    fn encode(&self, input: &String) -> Result<Block, &str> {
+    fn encode(&self, input: &String) -> Result<Digit, &str> {
         let value = self.lookup.get(input);
         match value {
             None => Err("Given value not contained in this Enum type"),
-            Some(value) => Ok(value.clone() as Block),
+            Some(value) => Ok(value.clone() as Digit),
         }
     }
 
-    fn decode(&self, input: Block) -> Result<String, &str> {
+    fn decode(&self, input: Digit) -> Result<String, &str> {
         let index = input as usize;
         if index >= self.options.len() {
             Err("Could not decode value as an Enum")
