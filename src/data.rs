@@ -3,7 +3,7 @@
 use std::result::Result;
 use std::collections::HashMap;
 
-use crate::{Digit, SignedDigit, SignedDoubleDigit};
+use crate::accum::{Digit, SignedDigit, SignedDoubleDigit};
 use crate::accum::Accumulator;
 
 pub enum Length {

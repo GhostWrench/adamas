@@ -11,7 +11,11 @@
 use std::vec::Vec;
 use std::string::String;
 
-use crate::{Digit, DoubleDigit};
+// Data types used as big digits
+pub type Digit = u64;
+pub type DoubleDigit = u128;
+pub type SignedDigit = i64;
+pub type SignedDoubleDigit = i128;
 
 #[derive(Debug)]
 pub struct Accumulator {
@@ -182,7 +186,7 @@ fn chop_digits(digits: DoubleDigit) -> [Digit; 2] {
 mod tests {
 
     use crate::accum::Accumulator;
-    use crate::Digit;
+    use crate::accum::Digit;
 
     #[test]
     fn add_at_place() {
