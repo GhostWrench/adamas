@@ -4,12 +4,92 @@ use std::result::Result;
 use std::collections::HashMap;
 
 use crate::{Block, SignedBlock, SignedDoubleBlock};
+use crate::accum::Accumulator;
+
+pub enum Length {
+    Fixed(usize),    // Parameter indicates total size
+    Variable(usize), // Parameter indicates maximum size
+}
+
+/// Sequence type which defines a sequence of Datum which it knows how to 
+/// compress into an accumulator
+pub struct Sequence<'a, T> {
+    spec: &'a dyn DatumSpec<T>,
+    length: Length,
+}
+
+impl<'a, T> Sequence<'a, T> {
+
+    pub fn new(spec: &'a dyn DatumSpec<T>, length: Length) -> Self {
+        Sequence { spec, length }
+    }
+
+    pub fn compress(&self, values: &[T], accum: &mut Accumulator) {
+        match self.length {
+            Length::Fixed(length) => self.compress_fixed(values, accum, length),
+            Length::Variable(length) => self.compress_variable(values, accum, length),
+        }
+    }
+
+    fn compress_fixed(&self, values: &[T], accum: &mut Accumulator, length: usize) {
+        let required_bits = self.spec.permutations();
+        for ii in 0..length {
+            accum.mul(required_bits);
+            accum.add(self.spec.encode(&values[ii]).unwrap());
+        }
+    }
+
+    fn compress_variable(&self, values: &[T], accum: &mut Accumulator, max_length: usize) {
+        let required_bits = self.spec.permutations() + 1;
+        let count = values.len();
+        if count > max_length {
+            panic!("Value of length {} was not able to fit in Sequence with max length {}", count, max_length);
+        }
+        for ii in 0..count {
+            accum.mul(required_bits);
+            accum.add(self.spec.encode(&values[ii]).unwrap() + 1);
+        }
+        accum.mul(required_bits); // Zero to indicate end of sequence
+    }
+
+    pub fn decompress(&self, accum: &mut Accumulator) -> Vec<T> {
+        match self.length {
+            Length::Fixed(length) => self.decompress_fixed(accum, length),
+            Length::Variable(length) => self.decompress_variable(accum, length),
+        }
+    }
+
+    fn decompress_fixed(&self, accum: &mut Accumulator, length: usize) -> Vec<T> {
+        let required_bits = self.spec.permutations();
+        let mut decompressed: Vec<T> = Vec::with_capacity(length);
+        for _ in 0..length {
+            decompressed.push(self.spec.decode(accum.div(required_bits)).unwrap());
+        }
+        decompressed.reverse();
+        decompressed
+    }
+
+    fn decompress_variable(&self, accum: &mut Accumulator, length: usize) -> Vec<T> {
+        let required_bits = self.spec.permutations() + 1;
+        let mut decompressed: Vec<T> = Vec::with_capacity(length);
+        for _ in 0..length {
+            let coded_value = accum.div(required_bits);
+            if coded_value == 0 {
+                break;
+            }
+            decompressed.push(self.spec.decode(coded_value-1).unwrap());
+        }
+        decompressed.reverse();
+        decompressed
+    }
+}
+
 
 /// Trait used to define a piece of data that can be compressed to a small 
 /// binary representation
 pub trait DatumSpec<T> {
     fn permutations(&self) -> Block;
-    fn encode(&self, input: T) -> Result<Block, &str>;
+    fn encode(&self, input: &T) -> Result<Block, &str>;
     fn decode(&self, value: Block) -> Result<T, &str>;
 }
 
@@ -29,8 +109,8 @@ impl DatumSpec<bool> for Bool {
         2
     }
 
-    fn encode(&self, input: bool) -> Result<Block, &str> {
-        Ok(input as Block)
+    fn encode(&self, input: &bool) -> Result<Block, &str> {
+        Ok(input.clone() as Block)
     }
 
     fn decode(&self, input: Block) -> Result<bool, &str> {
@@ -71,11 +151,11 @@ impl DatumSpec<SignedBlock> for IntRange {
         (self.max - self.min + 1) as Block
     }
 
-    fn encode(&self, input: SignedBlock) -> Result<Block, &str> {
-        if input < self.min || input > self.max {
+    fn encode(&self, input: &SignedBlock) -> Result<Block, &str> {
+        if *input < self.min || *input > self.max {
             return Err("Value to encode is outside allowed range");
         }
-        Ok((input - self.min) as Block)
+        Ok((*input - self.min) as Block)
     }
 
     fn decode(&self, input: Block) -> Result<SignedBlock, &str> {
@@ -132,11 +212,11 @@ impl DatumSpec<char> for CharSet {
         self.charset.len() as Block
     }
 
-    fn encode(&self, input: char) -> Result<Block, &str> {
+    fn encode(&self, input: &char) -> Result<Block, &str> {
         let value = self.lookup.get(&input);
         match value {
             None => Err("Could not encode character not defined in the character set"),
-            Some(value) => Ok(*value as Block)
+            Some(value) => Ok(value.clone() as Block)
         }
     }
 
@@ -178,11 +258,11 @@ impl DatumSpec<String> for Enum {
         self.options.len() as Block
     }
 
-    fn encode(&self, input: String) -> Result<Block, &str> {
-        let value = self.lookup.get(&input);
+    fn encode(&self, input: &String) -> Result<Block, &str> {
+        let value = self.lookup.get(input);
         match value {
             None => Err("Given value not contained in this Enum type"),
-            Some(value) => Ok(*value as Block),
+            Some(value) => Ok(value.clone() as Block),
         }
     }
 
@@ -207,8 +287,8 @@ mod tests {
     fn bool() {
         let b = Bool::new();
         assert_eq!(b.permutations(), 2);
-        assert_eq!(b.encode(false).unwrap(), 0);
-        assert_eq!(b.encode(true).unwrap(), 1);
+        assert_eq!(b.encode(&false).unwrap(), 0);
+        assert_eq!(b.encode(&true).unwrap(), 1);
         assert_eq!(b.decode(0).unwrap(), false);
         assert_eq!(b.decode(1).unwrap(), true);
         assert!(b.decode(2).is_err());
@@ -219,13 +299,13 @@ mod tests {
         let r = IntRange::new(-10, 10);
         assert_eq!(r.permutations(), 21);
         // low values
-        assert_eq!(r.encode(-10).unwrap(), 0);
+        assert_eq!(r.encode(&-10).unwrap(), 0);
         assert_eq!(r.decode(0).unwrap(), -10);
         // mid values
-        assert_eq!(r.encode(0).unwrap(), 10);
+        assert_eq!(r.encode(&0).unwrap(), 10);
         assert_eq!(r.decode(10).unwrap(), 0);
         // high values
-        assert_eq!(r.encode(10).unwrap(), 20);
+        assert_eq!(r.encode(&10).unwrap(), 20);
         assert_eq!(r.decode(20).unwrap(), 10);
     }
 
@@ -233,13 +313,13 @@ mod tests {
     fn charset() {
         let cs = CharSet::new("abcあいうえお123$正體字");
         assert_eq!(cs.permutations(), 15);
-        assert_eq!(cs.encode('あ').unwrap(), 3);
-        assert_eq!(cs.encode('1').unwrap(), 8);
-        assert_eq!(cs.encode('字').unwrap(), 14);
+        assert_eq!(cs.encode(&'あ').unwrap(), 3);
+        assert_eq!(cs.encode(&'1').unwrap(), 8);
+        assert_eq!(cs.encode(&'字').unwrap(), 14);
         assert_eq!(cs.decode(0).unwrap(), 'a');
         assert_eq!(cs.decode(7).unwrap(), 'お');
         assert_eq!(cs.decode(14).unwrap(), '字');
-        assert!(cs.encode('0').is_err());
+        assert!(cs.encode(&'0').is_err());
         assert!(cs.decode(15).is_err());
     }
 
@@ -251,10 +331,10 @@ mod tests {
             "Apple"
         ]);
         assert_eq!(e.permutations(), 3);
-        assert_eq!(e.encode(String::from("Banana")).unwrap(), 0);
-        assert_eq!(e.encode(String::from("Orange")).unwrap(), 1);
-        assert_eq!(e.encode("Apple".to_string()).unwrap(), 2);
-        assert!(e.encode("Mango".to_string()).is_err());
+        assert_eq!(e.encode(&String::from("Banana")).unwrap(), 0);
+        assert_eq!(e.encode(&String::from("Orange")).unwrap(), 1);
+        assert_eq!(e.encode(&"Apple".to_string()).unwrap(), 2);
+        assert!(e.encode(&"Mango".to_string()).is_err());
         assert_eq!(e.decode(0).unwrap(), "Banana");
         assert_eq!(e.decode(1).unwrap(), "Orange");
         assert_eq!(e.decode(2).unwrap(), "Apple");
