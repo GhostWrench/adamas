@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::accum::{Digit, SignedDigit, SignedDoubleDigit};
 use crate::accum::Accumulator;
 
+/// Length: indicate a fixed length or a variable length with a maximum
 pub enum Length {
     Fixed(usize),    // Parameter indicates total size
     Variable(usize), // Parameter indicates maximum size
@@ -167,6 +168,59 @@ impl DatumSpec<SignedDigit> for IntRange {
     }
 }
 
+/// Number range in fixed point format
+/// 
+/// Note: The compression used by this data type is not lossless
+pub struct FixedPointRange {
+    min: SignedDigit,
+    max: SignedDigit,
+    decimals: u32,
+}
+
+impl FixedPointRange {
+
+    pub fn new(min: f64, max: f64, decimals: u32) -> Self {
+        // Calculate the absolute maximum values from the required decimals
+        let abs_max_fixed = SignedDigit::MAX >> decimals;
+        let abs_max_float = abs_max_fixed as f64;
+        if max > abs_max_float {
+            panic!("Max allowable value for {} binary decimals is {}", decimals, abs_max_float);
+        }
+        if min < -abs_max_float {
+            panic!("Min allowable value for {} binary decimals is {}", decimals, -abs_max_float);
+        }
+        let min = float2fixed(min, decimals);
+        let max = float2fixed(max, decimals);
+        Self { min, max, decimals }
+    }
+}
+
+impl DatumSpec<f64> for FixedPointRange {
+
+    fn permutations(&self) -> Digit {
+        ((self.max - self.min) + 1) as Digit
+    }
+
+    fn encode(&self, input: &f64) -> Result<Digit, &str> {
+        let num = float2fixed(*input, self.decimals);
+        if num < self.min {
+            Err("Number is to small to be encoded as a fixed point")
+        } else if num > self.max {
+            Err("Number is too big to be encoded as a fixed point")
+        } else {
+            let encoded_num = (num - self.min) as Digit;
+            Ok(encoded_num)
+        }
+    }
+
+    fn decode(&self, input: Digit) -> Result<f64, &str> {
+        if input >= self.permutations() {
+            return Err("Cannot decode data, input larger than possible permutations");
+        }
+        let num = (input as SignedDigit) + self.min;
+        Ok(fixed2float(num, self.decimals))
+    }
+}
 
 /// CharSet type specification
 pub struct CharSet {
@@ -277,11 +331,32 @@ impl DatumSpec<String> for Enum {
     }
 }
 
+// Utility functions
+
+/// Convert a floating point number to a fixed point number
+fn float2fixed(value: f64, decimals: u32) -> SignedDigit {
+    let abs_max_fixed = SignedDigit::MAX >> decimals;
+    let two: f64 = 2.0;
+    let mut value = (value * two.powi(decimals as i32)) as SignedDigit;
+    if value < -abs_max_fixed {
+        value = -abs_max_fixed;
+    } else if value > abs_max_fixed {
+        value = abs_max_fixed;
+    }
+    value
+}
+
+fn fixed2float(value: SignedDigit, decimals: u32) -> f64 {
+    let two: f64 = 2.0;
+    (value as f64) / two.powi(decimals as i32)
+}
 
 /// Tests for this module
 mod tests {
 
-    use crate::data::{DatumSpec, Bool, IntRange, CharSet, Enum};
+    use crate::data::{
+        DatumSpec, Bool, IntRange, FixedPointRange, CharSet, Enum
+    };
 
     #[test]
     fn bool() {
@@ -295,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn range() {
+    fn int_range() {
         let r = IntRange::new(-10, 10);
         assert_eq!(r.permutations(), 21);
         // low values
@@ -307,6 +382,23 @@ mod tests {
         // high values
         assert_eq!(r.encode(&10).unwrap(), 20);
         assert_eq!(r.decode(20).unwrap(), 10);
+    }
+
+    #[test]
+    fn fixed_point_range() {
+        let r = FixedPointRange::new(-255.99, 255.99, 2);
+        assert_eq!(r.permutations(), 2047);
+        // low values
+        assert_eq!(r.encode(&-255.76).unwrap(), 0);
+        assert_eq!(r.decode(0).unwrap(), -255.75);
+        // mid values
+        assert_eq!(r.encode(&0.0).unwrap(), 1023);
+        assert_eq!(r.decode(1023).unwrap(), 0.0);
+        assert_eq!(r.encode(&-0.25).unwrap(), 1022);
+        assert_eq!(r.encode(&0.25).unwrap(), 1024);
+        // high values
+        assert_eq!(r.encode(&255.75).unwrap(), 2046);
+        assert_eq!(r.decode(2046).unwrap(), 255.75);
     }
 
     #[test]

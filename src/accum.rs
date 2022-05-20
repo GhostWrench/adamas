@@ -17,7 +17,7 @@ pub type DoubleDigit = u128;
 pub type SignedDigit = i64;
 pub type SignedDoubleDigit = i128;
 
-#[derive(Debug)]
+/// Accumulator struct, accumulates the results of chained math operations
 pub struct Accumulator {
     data: Vec<Digit>,
 }
