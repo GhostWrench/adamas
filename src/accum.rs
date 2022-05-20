@@ -72,6 +72,12 @@ impl Accumulator {
 
     /// Multiply the accumulator by a value
     pub fn mul(&mut self, value: Digit) {
+        // Multiplication by zero is not allowed, multiplication by 1 does nothing
+        if value < 1 {
+            panic!("Cannot multiply accumulator by zero!");
+        } else if value == 1 {
+            return;
+        }
         // Multiply digit by digit starting with the most significant
         for ii in (0..self.len()).rev() {
             let result: DoubleDigit = (self.data[ii] as DoubleDigit) * (value as DoubleDigit);

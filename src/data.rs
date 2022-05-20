@@ -6,75 +6,75 @@ use std::collections::HashMap;
 use crate::accum::{Digit, SignedDigit, SignedDoubleDigit};
 use crate::accum::Accumulator;
 
-/// Length: indicate a fixed length or a variable length with a maximum
-pub enum Length {
+/// SequenceLength: indicate a fixed length or a variable length with a maximum
+pub enum SequenceLength {
     Fixed(usize),    // Parameter indicates total size
     Variable(usize), // Parameter indicates maximum size
 }
 
 /// Sequence type which defines a sequence of Datum which it knows how to 
 /// compress into an accumulator
-pub struct Sequence<'a, T> {
+pub struct Sequencer<'a, T> {
     spec: &'a dyn DatumSpec<T>,
-    length: Length,
+    length: SequenceLength,
 }
 
-impl<'a, T> Sequence<'a, T> {
+impl<'a, T> Sequencer<'a, T> {
 
-    pub fn new(spec: &'a dyn DatumSpec<T>, length: Length) -> Self {
-        Sequence { spec, length }
+    pub fn new(spec: &'a dyn DatumSpec<T>, length: SequenceLength) -> Self {
+        Self { spec, length }
     }
 
     pub fn compress(&self, values: &[T], accum: &mut Accumulator) {
         match self.length {
-            Length::Fixed(length) => self.compress_fixed(values, accum, length),
-            Length::Variable(length) => self.compress_variable(values, accum, length),
+            SequenceLength::Fixed(length) => self.compress_fixed(values, accum, length),
+            SequenceLength::Variable(length) => self.compress_variable(values, accum, length),
         }
     }
 
     fn compress_fixed(&self, values: &[T], accum: &mut Accumulator, length: usize) {
-        let required_bits = self.spec.permutations();
+        let permutations = self.spec.permutations();
         for ii in 0..length {
-            accum.mul(required_bits);
+            accum.mul(permutations);
             accum.add(self.spec.encode(&values[ii]).unwrap());
         }
     }
 
     fn compress_variable(&self, values: &[T], accum: &mut Accumulator, max_length: usize) {
-        let required_bits = self.spec.permutations() + 1;
+        let permutations = self.spec.permutations() + 1;
         let count = values.len();
         if count > max_length {
-            panic!("Value of length {} was not able to fit in Sequence with max length {}", count, max_length);
+            panic!("Value of length {} was not able to be compressed by Sequencer with max length {}", count, max_length);
         }
+        accum.mul(permutations); // Zero to indicate end of sequence
         for ii in 0..count {
-            accum.mul(required_bits);
+            accum.mul(permutations);
             accum.add(self.spec.encode(&values[ii]).unwrap() + 1);
         }
-        accum.mul(required_bits); // Zero to indicate end of sequence
     }
 
     pub fn decompress(&self, accum: &mut Accumulator) -> Vec<T> {
         match self.length {
-            Length::Fixed(length) => self.decompress_fixed(accum, length),
-            Length::Variable(length) => self.decompress_variable(accum, length),
+            SequenceLength::Fixed(length) => self.decompress_fixed(accum, length),
+            SequenceLength::Variable(length) => self.decompress_variable(accum, length),
         }
     }
 
     fn decompress_fixed(&self, accum: &mut Accumulator, length: usize) -> Vec<T> {
-        let required_bits = self.spec.permutations();
+        let permutations = self.spec.permutations();
         let mut decompressed: Vec<T> = Vec::with_capacity(length);
         for _ in 0..length {
-            decompressed.push(self.spec.decode(accum.div(required_bits)).unwrap());
+            decompressed.push(self.spec.decode(accum.div(permutations)).unwrap());
         }
         decompressed.reverse();
         decompressed
     }
 
     fn decompress_variable(&self, accum: &mut Accumulator, length: usize) -> Vec<T> {
-        let required_bits = self.spec.permutations() + 1;
+        let permutations = self.spec.permutations() + 1;
         let mut decompressed: Vec<T> = Vec::with_capacity(length);
         for _ in 0..length {
-            let coded_value = accum.div(required_bits);
+            let coded_value = accum.div(permutations);
             if coded_value == 0 {
                 break;
             }
@@ -170,7 +170,8 @@ impl DatumSpec<SignedDigit> for IntRange {
 
 /// Number range in fixed point format
 /// 
-/// Note: The compression used by this data type is not lossless
+/// Note: The compression used by this data type is not lossless, also the 
+///       provided minimum and maximum values are not guaranteed to be exact
 pub struct FixedPointRange {
     min: SignedDigit,
     max: SignedDigit,
@@ -354,9 +355,20 @@ fn fixed2float(value: SignedDigit, decimals: u32) -> f64 {
 /// Tests for this module
 mod tests {
 
+    use std::vec::Vec;
+
     use crate::data::{
-        DatumSpec, Bool, IntRange, FixedPointRange, CharSet, Enum
+        DatumSpec, 
+        Bool, 
+        IntRange, 
+        FixedPointRange, 
+        CharSet, 
+        Enum,
+        SequenceLength,
+        Sequencer,
     };
+
+    use crate::accum::Accumulator;
 
     #[test]
     fn bool() {
@@ -431,5 +443,74 @@ mod tests {
         assert_eq!(e.decode(1).unwrap(), "Orange");
         assert_eq!(e.decode(2).unwrap(), "Apple");
         assert!(e.decode(3).is_err());
+    }
+
+    #[test]
+    fn seq_bool() {
+        // Fixed length sequence
+        let mut a = Accumulator::new();
+        let spec = Bool::new();
+        let seq = &[false, true, true, false, true];
+        // Sequence as fixed
+        let sequencer0 = Sequencer::new(&spec, SequenceLength::Fixed(5));
+        sequencer0.compress(seq, &mut a);
+        // Sequence as variable length
+        let sequencer1 = Sequencer::new(&spec, SequenceLength::Variable(20));
+        sequencer1.compress(seq, &mut a);
+        // Decompress and compare
+        let deseq = sequencer1.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq);
+        let deseq = sequencer0.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq);
+    }
+
+    #[test]
+    fn seq_int_range() {
+        let mut a = Accumulator::new();
+        let seq = &[5, 10, -1, 3];
+        // Sequence as variable
+        let spec0 = IntRange::new(-1, 10);
+        let sequencer0 = Sequencer::new(
+            &spec0,
+            SequenceLength::Variable(50),
+        );
+        sequencer0.compress(seq, &mut a);
+        // Sequence as fixed
+        let spec1 = IntRange::new(-2, 20);
+        let sequencer1 = Sequencer::new(
+            &spec1,
+            SequenceLength::Fixed(4),
+        );
+        sequencer1.compress(seq, &mut a);
+        // Decompress
+        let deseq = sequencer1.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq);
+        let deseq = sequencer0.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq);
+    }
+
+    #[test]
+    fn seq_fixed_point_range() {
+        let mut a = Accumulator::new();
+        let spec = FixedPointRange::new(-256.0, 256.0, 3);
+        // Sequence 0
+        let seq0: &[f64] = &[-100.0, -255.875, 255.875, 0.0, 0.125, 123.625];
+        let sequencer0 = Sequencer::new(
+            &spec,
+            SequenceLength::Fixed(6),
+        );
+        sequencer0.compress(seq0, &mut a);
+        // Sequence 1
+        let seq1: &[f64] = &[0.0, 0.125, -255.875, 255.875];
+        let sequencer1 = Sequencer::new(
+            &spec,
+            SequenceLength::Variable(100),
+        );
+        sequencer1.compress(seq1, &mut a);
+        // Decompress
+        let deseq = sequencer1.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq1);
+        let deseq = sequencer0.decompress(&mut a);
+        assert_eq!(deseq.as_slice(), seq0);
     }
 }
