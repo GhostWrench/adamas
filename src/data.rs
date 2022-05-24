@@ -352,10 +352,10 @@ fn fixed2float(value: SignedDigit, decimals: u32) -> f64 {
     (value as f64) / two.powi(decimals as i32)
 }
 
-/// Tests for this module
+#[cfg(test)]
 mod tests {
 
-    use std::vec::Vec;
+    //use std::vec::Vec;
 
     use crate::data::{
         DatumSpec, 
@@ -367,7 +367,7 @@ mod tests {
         SequenceLength,
         Sequencer,
     };
-
+    
     use crate::accum::Accumulator;
 
     #[test]

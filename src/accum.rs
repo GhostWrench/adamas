@@ -9,6 +9,8 @@
 //! # Examples
 
 use std::vec::Vec;
+
+#[cfg(test)]
 use std::string::String;
 
 // Data types used as big digits
@@ -159,6 +161,7 @@ impl Accumulator {
     }
 
     /// Retrieve the contents of the accumulator as a hex string
+    #[cfg(test)]
     fn to_hex_str(&self) -> String {
         let mut s: String = String::from("");
         for digit in self.data.iter().rev() {
