@@ -15,13 +15,13 @@ pub enum SequenceLength {
 /// Sequence type which defines a sequence of Datum which it knows how to 
 /// compress into an accumulator
 pub struct Sequencer<'a, T> {
-    spec: &'a dyn DatumSpec<T>,
+    spec: &'a dyn DataSpec<T>,
     length: SequenceLength,
 }
 
 impl<'a, T> Sequencer<'a, T> {
 
-    pub fn new(spec: &'a dyn DatumSpec<T>, length: SequenceLength) -> Self {
+    pub fn new(spec: &'a dyn DataSpec<T>, length: SequenceLength) -> Self {
         Self { spec, length }
     }
 
@@ -88,7 +88,7 @@ impl<'a, T> Sequencer<'a, T> {
 
 /// Trait used to define a piece of data that can be compressed to a small 
 /// binary representation
-pub trait DatumSpec<T> {
+pub trait DataSpec<T> {
     fn permutations(&self) -> Digit;
     fn encode(&self, input: &T) -> Result<Digit, &str>;
     fn decode(&self, value: Digit) -> Result<T, &str>;
@@ -104,7 +104,7 @@ impl Bool {
     }
 }
 
-impl DatumSpec<bool> for Bool {
+impl DataSpec<bool> for Bool {
 
     fn permutations(&self) -> Digit {
         2
@@ -146,7 +146,7 @@ impl IntRange {
     }
 }
 
-impl DatumSpec<SignedDigit> for IntRange {
+impl DataSpec<SignedDigit> for IntRange {
 
     fn permutations(&self) -> Digit {
         (self.max - self.min + 1) as Digit
@@ -196,7 +196,7 @@ impl FixedPointRange {
     }
 }
 
-impl DatumSpec<f64> for FixedPointRange {
+impl DataSpec<f64> for FixedPointRange {
 
     fn permutations(&self) -> Digit {
         ((self.max - self.min) + 1) as Digit
@@ -261,7 +261,7 @@ impl CharSet {
 
 }
 
-impl DatumSpec<char> for CharSet {
+impl DataSpec<char> for CharSet {
 
     fn permutations(&self) -> Digit {
         self.charset.len() as Digit
@@ -307,7 +307,7 @@ impl Enum {
     }
 }
 
-impl DatumSpec<String> for Enum {
+impl DataSpec<String> for Enum {
 
     fn permutations(&self) -> Digit {
         self.options.len() as Digit
@@ -358,7 +358,7 @@ mod tests {
     //use std::vec::Vec;
 
     use crate::data::{
-        DatumSpec, 
+        DataSpec, 
         Bool, 
         IntRange, 
         FixedPointRange, 

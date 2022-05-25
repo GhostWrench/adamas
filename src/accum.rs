@@ -99,9 +99,8 @@ impl Accumulator {
         let mut rem: [Digit; 2] = [0; 2];
         for ii in (0..self.len()).rev() {
             let num: [Digit; 2] = [self.data[ii], rem[0]];
-            let result: [Digit; 2];
             let num: DoubleDigit = fuse_digits(num);
-            result = chop_digits(num / den);
+            let result = chop_digits(num / den);
             rem = chop_digits(num % den);
             self.data[ii] = result[0];
         }
